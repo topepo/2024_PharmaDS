@@ -1,0 +1,582 @@
+---
+title: "What Happens After the Model?"
+author: "Max Kuhn"
+
+---
+
+```{r}
+#| label: startup
+#| include: false
+
+# pak::pak(c("topepo/workboots@separate-models-and-prediction"), ask = FALSE)
+
+library(tidymodels)
+library(bonsai)
+library(rules)
+library(doMC)
+library(applicable)
+library(DALEXtra)
+# library(gganimate)
+library(workboots)
+library(probably)
+library(future)
+
+# ------------------------------------------------------------------------------
+
+tidymodels_prefer()
+theme_set(theme_bw())
+options(pillar.advice = FALSE, pillar.min_title_chars = Inf)
+registerDoMC(cores = 10)
+plan(multisession)
+
+# ------------------------------------------------------------------------------
+
+light_bg <- "#fcfefe" # from aml4td.scss
+
+# ------------------------------------------------------------------------------
+# ggplot stuff
+
+theme_transparent <- function(...) {
+
+  ret <- ggplot2::theme_bw(...)
+
+  transparent_rect <- ggplot2::element_rect(fill = "transparent", colour = NA)
+  ret$panel.background  <- transparent_rect
+  ret$plot.background   <- transparent_rect
+  ret$legend.background <- transparent_rect
+  ret$legend.key        <- transparent_rect
+
+  ret$legend.position <- "top"
+
+  ret
+}
+
+theme_set(theme_transparent())
+```
+
+```{r}
+#| label: generate-data
+#| include: false
+
+drift_ind <- 501:2000
+drift_n <- length(drift_ind)
+
+set.seed(382)
+sim_model   <- 
+  sim_regression(10000) %>% 
+  rename(mol_weight = predictor_04) %>% 
+  mutate(mol_weight = 3 * mol_weight + 250)
+sim_new <- sim_regression(2000) %>% 
+  rename(mol_weight = predictor_04) %>% 
+  mutate(mol_weight =  3 * mol_weight + 250)
+
+drifted <- sim_new$mol_weight[drift_ind] - 140 + rnorm(drift_n, 0, 20)
+
+sim_new$mol_weight[drift_ind] <- 
+  ifelse(runif(drift_n) < .5, sim_new$mol_weight[drift_ind], drifted)
+
+n_monitor <- nrow(sim_new)
+n_weeks <- 50
+sim_new$.week <- sort(rep_len(1:n_weeks, length.out = n_monitor))
+```
+
+```{r}
+#| label: split-data
+#| include: false
+set.seed(79)
+sim_init <- initial_validation_split(sim_model, strata = outcome)
+sim_tr <- training(sim_init)
+sim_te <- testing(sim_init)
+sim_vl <- validation(sim_init)
+sim_rs <- validation_set(sim_init)
+```
+
+
+```{r}
+#| label: preproc-and-models
+#| include: false
+
+base_rec <- 
+  recipe(outcome ~ ., data = sim_tr) %>% 
+  step_normalize(all_predictors())
+
+pls_rec <- 
+  base_rec %>% 
+  step_pls(all_predictors(), outcome = vars(outcome), num_comp = tune())
+
+ss_rec <- 
+  base_rec %>% 
+  step_spatialsign(all_predictors())
+
+recipes <- list(basic = base_rec, pls = pls_rec, spatial_sign = ss_rec)
+
+# ------------------------------------------------------------------------------
+
+lgb_spec <- 
+  boost_tree(trees = 200, min_n = tune(), tree_depth = tune(), 
+             learn_rate = tune(), stop_iter = tune()) %>% 
+  set_engine("lightgbm") %>% 
+  set_mode("regression")
+
+glmn_spec <- 
+  linear_reg(mixture = tune(), penalty = tune()) %>% 
+  set_engine("glmnet") 
+
+knn_spec <- 
+  nearest_neighbor(neighbors = tune(), weight_func = tune()) %>% 
+  set_mode("regression")
+
+cubist_spec <- cubist_rules(committees = tune(), neighbors = tune())
+
+models <- list(lightgbm = lgb_spec, glmnet = glmn_spec, knn = knn_spec, 
+               cubist = cubist_spec)
+
+wflow_set <- workflow_set(recipes, models) 
+
+pls_id <- grep("pls", wflow_set$wflow_id, value = TRUE)
+pls_param <- 
+  purrr::map(pls_id, ~ extract_parameter_set_dials(wflow_set, id = .x))
+# purrr::map(recipes::update(.x, num_comp = num_comp(c(2, 20))))
+
+for (i in seq_along(pls_param)) {
+  pls_param[[i]] <- recipes::update(pls_param[[i]], num_comp = num_comp(c(2, 50)))
+  wflow_set <- wflow_set %>% option_add(param_info = pls_param[[i]], id = pls_id[i])
+}
+```
+
+
+```{r}
+#| label: training
+#| include: false
+#| cache: true
+
+sim_res <- 
+  wflow_set %>% 
+  workflow_map(
+    resamples = sim_rs,
+    grid = 25,
+    metrics = metric_set(rmse),
+    control = control_grid(save_workflow = TRUE, save_pred = TRUE),
+    verbose = TRUE, 
+    seed = 973
+  )
+
+sim_fit <- fit_best(sim_res)
+```
+
+
+
+```{r}
+#| label: best-res
+#| include: false
+
+sim_test_res <- 
+  augment(sim_fit, sim_te) %>% 
+  rmse(outcome, .pred) %>% 
+  mutate(week = 0, mean_mw = mean(sim_te$mol_weight))
+
+cubist_res <- 
+  sim_res %>% 
+  extract_workflow_set_result("basic_cubist")
+
+cubist_best <- select_best(cubist_res, metric = "rmse")
+
+cubist_val_pred <- 
+  sim_fit %>% 
+  augment(sim_vl) 
+```
+
+## Calibration - Validation Set
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+```{r}
+#| label: cal-plots-before
+#| echo: false
+#| out-width: 100%
+#| fig-width: 4
+#| fig-align: "center"
+
+cubist_val_pred %>% 
+  cal_plot_regression(outcome, .pred, alpha = 1 / 5, cex = 2) +
+  labs(title = "Raw Predictions")
+```
+
+:::
+
+::::
+
+
+## Calibration - Isotonic regression
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+```{r}
+#| label: cal-plots-before-2
+#| echo: false
+#| out-width: 100%
+#| fig-width: 4
+#| fig-height: 4
+#| fig-align: "center"
+
+cubist_val_pred %>% 
+  cal_plot_regression(outcome, .pred, alpha = 1 / 5, cex = 2) +
+  labs(title = "Raw Predictions")
+```
+
+:::
+
+::: {.column width="50%"}
+
+```{r}
+#| label: cal-plots-after
+#| echo: false
+#| out-width: 100%
+#| fig-width: 4
+#| fig-height: 4
+#| fig-align: "center"
+
+cubist_val_pred %>% 
+  cal_estimate_isotonic(outcome, .pred) %>% 
+  cal_apply(cubist_val_pred, .) %>% 
+  cal_plot_regression(outcome, .pred, alpha = 1 / 5, cex = 2) +
+  labs(title = "Calibrated Predictions")
+```
+
+
+:::
+
+::::
+
+
+## Characterization
+
+## Importance
+
+```{r}
+#| label: imp-calcs
+#| include: false
+#| cache: true
+
+explainer_cubist <- 
+  explain_tidymodels(
+    sim_fit, 
+    data = sim_tr, 
+    y = sim_tr$outcome,
+    label = "Cubist",
+    verbose = FALSE
+  )
+
+set.seed(1805)
+pdp_mol_weight <- model_profile(explainer_cubist, N = 500, variables = "mol_weight")
+
+set.seed(1807)
+cubist_vip <- 
+  explainer_cubist %>% 
+  model_parts() 
+
+labs <- 
+  tibble::tribble(
+    ~variable, ~feature,
+    "predictor_07", "num_atoms",
+    "predictor_13", "num_bonds",
+    "predictor_16", "eccentricity",
+    "predictor_09", "centralization",
+    "predictor_08", "E_state",
+    "predictor_02", "total_walk_count",
+    "predictor_12", "polarity",
+    "predictor_10", "num_circuits",
+    "predictor_03", "num_3_mem_rings",
+    "predictor_15", "aromatic_ratio",
+    "predictor_17", "ring_complexity",
+    "predictor_11", "slogp",
+    "predictor_01", "peoe_vsa",
+    "predictor_18", "aac",
+    "predictor_14", "dipole_moment",
+    "predictor_05", "phi",
+    "predictor_06", "num_5_mem_rings",
+    "predictor_19", "ivde",
+    "predictor_20", "ivdm",
+    "mol_weight", "mol_weight",
+  )
+```
+
+
+```{r}
+#| label: vip
+#| echo: false
+#| out-width: 90%
+#| fig-width: 9
+#| fig-height: 4
+#| fig-align: "center"
+
+full <- mean(cubist_vip$dropout_loss[cubist_vip$variable == "_full_model_"])
+
+cubist_vip %>% 
+  as.data.frame() %>% 
+  filter(!grepl("^_", variable)) %>% 
+  summarize(mean_drop = mean(dropout_loss), .by = c(variable)) %>% 
+  inner_join(labs, by = "variable") %>% 
+  mutate(
+    feature = factor(feature), 
+    feature = reorder(feature, mean_drop),
+    mean_drop = mean_drop - full
+    ) %>% 
+  ggplot(aes(x = mean_drop, y = feature)) + 
+  geom_bar(stat = "identity") +
+  labs(y = NULL, x = "Drop in RMSE")
+```
+
+## PDP
+
+```{r}
+#| label: pdp
+#| echo: false
+#| out-width: 90%
+#| fig-width: 9
+#| fig-height: 4
+#| fig-align: "center"
+
+ggplot_pdp <- function(obj, x) {
+  
+  p <- 
+    as_tibble(obj$agr_profiles) %>%
+    mutate(`_label_` = stringr::str_remove(`_label_`, "^[^_]*_")) %>%
+    ggplot(aes(`_x_`, `_yhat_`)) +
+    geom_line(data = as_tibble(obj$cp_profiles),
+              aes(x = {{ x }}, group = `_ids_`),
+              linewidth = 0.5, alpha = 0.05, color = "gray50")
+  
+  num_colors <- n_distinct(obj$agr_profiles$`_label_`)
+  
+  if (num_colors > 1) {
+    p <- p + geom_line(aes(color = `_label_`), linewidth = 1.2, alpha = 0.8)
+  } else {
+    p <- p + geom_line(linewidth = 1.2, alpha = 0.8)
+  }
+  
+  p
+}
+
+ggplot_pdp(pdp_mol_weight, mol_weight) +
+  labs(x = "molecular weight", y = "effect")
+
+```
+
+## Prediction Intervals
+
+
+```{r}
+#| label: interval-calcs
+#| include: false
+#| cache: false
+# caching fails with "long vectors not supported yet" :-O we'll manually cache
+
+if (!file.exists("RData/intervals.RData")) {
+  cfml_ints <- int_conformal_split(sim_fit, cal_data = sim_vl)
+  set.seed(9832)
+  bts_ints <- sim_tr %>% bootstraps(times = 100) %>% add_bootstrap_models(sim_fit)
+  save(bts_ints, cfml_ints, file = "RData/intervals.RData")
+} else {
+  load("RData/intervals.RData")
+}
+```
+
+## 90% Prediction Intervals
+
+
+```{r}
+#| label: two-intervals
+#| echo: false
+#| out-width: 90%
+#| fig-width: 9
+#| fig-height: 4
+#| fig-align: "center"
+
+set.seed(23) 
+int_values <- 
+  sim_te %>% 
+  mutate(bins = ntile(outcome, 10)) %>% 
+  group_by(bins) %>% 
+  sample_n(1) %>% 
+  ungroup() %>% 
+  dplyr::select(-bins)
+
+int_res <- 
+  predict(cfml_ints, int_values, level = 0.90) %>% 
+  mutate(method = "conformal split") %>% 
+  bind_cols(int_values)
+
+int_res <- 
+  int_res %>% 
+  bind_rows(
+    predict(bts_ints, int_values, interval_width = 0.90) %>% 
+      mutate(method = "bootstrap") %>% 
+      bind_cols(int_values)
+  ) %>% 
+  mutate(
+    inside = ifelse(outcome <= .pred_upper & outcome >= .pred_lower, "yes", "no")
+  )
+
+int_res %>% 
+  ggplot(aes(.pred, outcome)) + 
+  geom_abline(lty = 3) + 
+  geom_point(aes(col = inside), show.legend = FALSE, ) + 
+  geom_errorbar(aes(ymin = .pred_lower, ymax = .pred_upper), width = 3, alpha = 1 / 2) + 
+  facet_wrap(~ method) + 
+  coord_obs_pred() +
+  labs(x = "Predicted", y = "Observed")
+
+```
+
+## Documentation
+
+
+## Monitoring
+
+```{r}
+#| label: split-new-data
+#| include: false
+#| cache: true
+
+sim_split <- 
+  sim_new %>% 
+  nest(.by = .week) 
+
+sim_monitor_data <- 
+  sim_split %>% 
+  mutate(
+    predictions = purrr::map(data, ~ augment(sim_fit, .x)),
+    rmse = purrr::map(predictions, ~ rmse(.x, outcome, .pred)),
+    mean_mw = map_dbl(data, ~ mean(.x$mol_weight))
+  ) 
+```
+
+
+```{r}
+#| label: monitor-perf
+#| include: false
+#| cache: true
+
+rmse_interval <- function(split) {
+  split %>% 
+    analysis() %>% 
+    yardstick::rmse(outcome, .pred) %>% 
+    dplyr::select(term = .metric, estimate = .estimate) %>% 
+    mutate(std.err = NA_real_)
+}
+
+rmse_ints <- 
+  sim_monitor_data %>% 
+  mutate(
+    ints = purrr::map(predictions, 
+               ~ bootstraps(.x, times = 2001) %>% 
+                 mutate(rmse = purrr::map(splits, rmse_interval)) %>%
+                 int_pctl(rmse, alpha = 0.1)
+    )
+  )
+```
+
+## Post- Deployment Monitoring
+
+
+```{r}
+#| label: monitor-1
+#| echo: false
+#| out-width: 70%
+#| fig-width: 6
+#| fig-height: 4.25
+#| fig-align: "center"
+
+rmse_ints %>% 
+  dplyr::select(.week, ints) %>% 
+  unnest(ints) %>% 
+  filter(.week <= 10) %>% 
+  ggplot(aes(.week)) + 
+  geom_point(aes(y = .estimate)) + 
+  geom_errorbar(aes(ymin = .lower, ymax = .upper), width = 1 / 4) + 
+  labs(x = "Week", y = "RMSE") +
+  scale_x_continuous(breaks= pretty_breaks())
+```
+
+
+## Maybe we should look into this...
+
+
+```{r}
+#| label: monitor-2
+#| echo: false
+#| out-width: 70%
+#| fig-width: 6
+#| fig-height: 4.25
+#| fig-align: "center"
+
+rmse_ints %>% 
+  dplyr::select(.week, ints) %>% 
+  unnest(ints) %>% 
+  ggplot(aes(.week)) + 
+  geom_point(aes(y = .estimate)) + 
+  geom_errorbar(aes(ymin = .lower, ymax = .upper), width = 3 / 4) + 
+  labs(x = "Week", y = "RMSE")
+```
+
+
+## Monitoring Performance for "Drift"
+
+```{r}
+#| label: mol-weight
+#| echo: false
+#| out-width: 70%
+#| fig-width: 6
+#| fig-height: 4.25
+#| fig-align: "center"
+
+rmse_ints %>% 
+  ggplot(aes(.week)) + 
+  geom_point(aes(y = mean_mw)) + 
+  labs(x = "Week", y = "Average Mol Weight")
+```
+
+
+
+## Applicability
+
+```{r}
+#| label: apd-isolation
+#| include: false
+#| cache: true
+#| warning: false
+
+if_apd <- apd_isolation(base_rec, sim_tr)
+if_scores <- 
+  sim_split %>% 
+  mutate(scores = purrr::map(data, ~ score(if_apd, .x))) %>% 
+  dplyr::select(.week, scores) %>% 
+  unnest(scores)
+
+if_means <- 
+  if_scores %>% 
+  summarize(`applicability score` = mean(score_pctl), .by = c(.week))
+```
+
+
+## Scoring New Data
+
+```{r}
+#| label: iso-forest
+#| echo: false
+#| out-width: 70%
+#| fig-width: 6
+#| fig-height: 4.25
+#| fig-align: "center"
+
+if_means %>% 
+  ggplot(aes(.week)) + 
+  geom_point(aes(y = `applicability score`)) + 
+  labs(x = "Week")
+```
+
