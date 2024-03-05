@@ -13,20 +13,22 @@ author: "Max Kuhn"
 library(tidymodels)
 library(bonsai)
 library(rules)
-library(doMC)
 library(applicable)
 library(DALEXtra)
 # library(gganimate)
 library(workboots)
 library(probably)
 library(future)
+library(doParallel)
+library(patchwork)
 
 # ------------------------------------------------------------------------------
 
 tidymodels_prefer()
 theme_set(theme_bw())
 options(pillar.advice = FALSE, pillar.min_title_chars = Inf)
-registerDoMC(cores = 10)
+cl <- makePSOCKcluster(parallel::detectCores(logical = FALSE))
+registerDoParallel(cl)
 plan(multisession)
 
 # ------------------------------------------------------------------------------
@@ -58,17 +60,47 @@ theme_set(theme_transparent())
 #| label: generate-data
 #| include: false
 
+# Scale outcome to a range typically seen for BBB permeation
+logBBB <- function(x, lo = -6, hi = 10) {
+  rng <- c(-95,  170)# from simulation
+  ( (x - rng[1]) / abs(diff(rng)) ) * (hi - lo) + lo
+}
+
 drift_ind <- 501:2000
 drift_n <- length(drift_ind)
 
 set.seed(382)
-sim_model   <- 
-  sim_regression(10000) %>% 
-  rename(mol_weight = predictor_04) %>% 
-  mutate(mol_weight = 3 * mol_weight + 250)
-sim_new <- sim_regression(2000) %>% 
-  rename(mol_weight = predictor_04) %>% 
-  mutate(mol_weight =  3 * mol_weight + 250)
+
+sim_data <- 
+  sim_regression(10000 + 2000) %>% 
+  rename(
+    num_atoms = predictor_07,
+    num_bonds = predictor_13,
+    eccentricity = predictor_16,
+    centralization = predictor_09,
+    E_state = predictor_08,
+    total_walk_count = predictor_02,
+    polarity = predictor_12,
+    num_circuits = predictor_10,
+    num_3_mem_rings = predictor_03,
+    aromatic_ratio = predictor_15,
+    ring_complexity = predictor_17,
+    slogp = predictor_11,
+    peoe_vsa = predictor_01,
+    aac = predictor_18,
+    dipole_moment = predictor_14,
+    phi = predictor_05,
+    num_5_mem_rings = predictor_06,
+    ivde = predictor_19,
+    ivdm = predictor_20,
+    mol_weight = predictor_04
+  ) %>% 
+  mutate(
+    mol_weight = 3 * mol_weight + 250,
+    outcome = logBBB(outcome))
+
+sim_model <- sim_data[1:10000,]
+sim_new   <- sim_data[10001:nrow(sim_data),]
 
 drifted <- sim_new$mol_weight[drift_ind] - 140 + rnorm(drift_n, 0, 20)
 
@@ -91,6 +123,16 @@ sim_vl <- validation(sim_init)
 sim_rs <- validation_set(sim_init)
 ```
 
+## Some example data
+
+Computational chemistry QSAR data were simulated for a numeric outcome:
+
+*  n = `r nrow(sim_tr)` training set. 
+*  n = `r nrow(sim_te)` test set. 
+*  n = `r nrow(sim_vl)` validation set. 
+*  `r ncol(sim_tr) - 1` molecular descriptors 
+
+Let’s suppose it is an assay to measure blood-brain-barrier penetration. 
 
 ```{r}
 #| label: preproc-and-models
@@ -118,9 +160,12 @@ lgb_spec <-
   set_engine("lightgbm") %>% 
   set_mode("regression")
 
-glmn_spec <- 
-  linear_reg(mixture = tune(), penalty = tune()) %>% 
-  set_engine("glmnet") 
+nnet_spec <- 
+  mlp(hidden_units = tune(), penalty = tune(), epochs = tune(), 
+      activation = tune(), learn_rate = tune()) %>% 
+  set_mode("regression") %>% 
+  set_engine("brulee")
+  
 
 knn_spec <- 
   nearest_neighbor(neighbors = tune(), weight_func = tune()) %>% 
@@ -128,7 +173,7 @@ knn_spec <-
 
 cubist_spec <- cubist_rules(committees = tune(), neighbors = tune())
 
-models <- list(lightgbm = lgb_spec, glmnet = glmn_spec, knn = knn_spec, 
+models <- list(lightgbm = lgb_spec, nnet = nnet_spec, knn = knn_spec, 
                cubist = cubist_spec)
 
 wflow_set <- workflow_set(recipes, models) 
@@ -145,6 +190,33 @@ for (i in seq_along(pls_param)) {
 ```
 
 
+## Model Development
+
+A few models were tuned:
+
+:::: {.columns}
+
+::: {.column width="50%"}
+* boosted trees (lightgbm)
+* Cubist rules
+:::
+
+::: {.column width="50%"}
+* nearest-neighbor regression
+* neural networks (single layer, FF)
+:::
+
+::::
+
+Several preprocessors were also assessed: nothing, partial least squares, and the spatial sign. 
+
+Each was tuned over their main parameters using 50 candidates. 
+
+<br>
+
+The validation set RMSE was used to choose within- and between-models.
+
+
 ```{r}
 #| label: training
 #| include: false
@@ -154,17 +226,50 @@ sim_res <-
   wflow_set %>% 
   workflow_map(
     resamples = sim_rs,
-    grid = 25,
+    grid = 50,
     metrics = metric_set(rmse),
-    control = control_grid(save_workflow = TRUE, save_pred = TRUE),
+    control = control_grid(save_workflow = TRUE, save_pred = TRUE, parallel_over = "everything"),
     verbose = TRUE, 
     seed = 973
   )
 
 sim_fit <- fit_best(sim_res)
+sim_best <- rank_results(sim_res)$wflow_id[1]
 ```
 
+```{r}
+#| label: all-boot-ci
+#| include: false
+#| cache: true
 
+rmse_interval <- function(split) {
+  split %>% 
+    analysis() %>% 
+    group_by(.config) %>% 
+    yardstick::rmse(outcome, .pred) %>% 
+    dplyr::select(term = .config, estimate = .estimate) %>% 
+    mutate(std.err = NA_real_)
+}
+
+get_bootstraps <- function(x) {
+  x$.predictions[[1]] %>% 
+    bootstraps(times = 2001) %>% 
+    mutate(rmse = purrr::map(splits, rmse_interval)) %>%
+    int_pctl(rmse, alpha = 0.1)
+}
+
+all_boot_results <- 
+  sim_res %>% 
+  unnest(info) %>% 
+  mutate(ints = purrr::map(result, get_bootstraps)) %>% 
+  dplyr::select(wflow_id, model, ints) %>% 
+  unnest(ints) %>% 
+  mutate(
+    `preprocessor` = map_chr(wflow_id, ~ strsplit(.x, "_")[[1]][1]),
+    model = gsub("_", " ", model),
+    rank = rank(.estimate)
+  )
+```
 
 ```{r}
 #| label: best-res
@@ -175,18 +280,72 @@ sim_test_res <-
   rmse(outcome, .pred) %>% 
   mutate(week = 0, mean_mw = mean(sim_te$mol_weight))
 
-cubist_res <- 
+best_fit_res <- 
   sim_res %>% 
-  extract_workflow_set_result("basic_cubist")
+  extract_workflow_set_result(sim_best)
 
-cubist_best <- select_best(cubist_res, metric = "rmse")
+best_fit_param <- select_best(best_fit_res, metric = "rmse")
 
-cubist_val_pred <- 
+best_fit_val_pred <- 
   sim_fit %>% 
   augment(sim_vl) 
+
+best_fit_test_pred <- 
+  sim_fit %>% 
+  augment(sim_te) 
+
+best_fit_test_rmse <- best_fit_test_pred %>% rmse(outcome, .pred)
 ```
 
-## Calibration - Validation Set
+## Model Results
+
+
+```{r}
+#| label: all-rmse
+#| echo: false
+#| out-width: 100%
+#| fig-height: 4
+#| fig-width: 8
+#| fig-align: "center"
+all_boot_results %>% 
+  mutate(model = ifelse(model == "mlp", "neural network", model)) %>% 
+  ggplot(aes(rank, .estimate, col = model, pch = model)) +
+  geom_errorbar(aes(ymin = .lower, ymax = .upper), width = 1 / 2, alpha = 1 / 5) +
+  geom_point(cex = 1 / 3) +
+  labs(y = "RMSE", x = "Model Rank") +
+  scale_colour_viridis_d(option = "turbo")
+
+```
+
+## Model Selection
+
+We ended up using one of the numerically best models: a neural network
+
+- `r best_fit_param$hidden_units` hidden units with `r best_fit_param$activation` activation
+- weight decay of $10^{`r signif(log10(best_fit_param$penalty), 2)`}$
+- a learning rate of $10^{`r signif(log10(best_fit_param$learn_rate), 2)`}$, trained over `r best_fit_param$epochs` epochs
+
+Performance statistics (RMSE)
+
+ - validation set: `r signif(rank_results(sim_res)$mean[1], digits = 3)`
+ - test set: `r signif(best_fit_test_rmse$.estimate, digits = 3)`
+
+## Calibration
+
+It’s pretty easy to just look at the metrics (RMSE) and make decisions. 
+
+> The only way to be comfortable with your data is to never look at them. 
+
+<br>
+
+For any type of model, we should check the _calibration_ of the results. Are they consistent with what we see in nature? 
+
+- Classification: we try to see if our probability estimates match the rate of the event. 
+
+- Regression: we plot observed vs predicted values. 
+
+
+## Calibration Results
 
 :::: {.columns}
 
@@ -195,74 +354,117 @@ cubist_val_pred <-
 ```{r}
 #| label: cal-plots-before
 #| echo: false
-#| out-width: 100%
+#| out-width: 90%
 #| fig-width: 4
 #| fig-align: "center"
 
-cubist_val_pred %>% 
+best_fit_val_pred %>% 
   cal_plot_regression(outcome, .pred, alpha = 1 / 5, cex = 2) +
-  labs(title = "Raw Predictions")
+  labs(title = "Validation Set")
 ```
 
 :::
 
+::: {.column width="50%"}
+
+```{r}
+#| label: cal-plots-test
+#| echo: false
+#| out-width: 90%
+#| fig-width: 4
+#| fig-align: "center"
+
+best_fit_test_pred %>% 
+  cal_plot_regression(outcome, .pred, alpha = 1 / 5, cex = 2) +
+  labs(title = "Test Set")
+```
+
+:::
+
+
 ::::
 
 
-## Calibration - Isotonic regression
+## Calibration 
+
+Some models (like ensembles) tend to under-predict at the tails of the outcome distribution. 
+
+If that’s the case, our best avenue is to try a different model.  
+
+Otherwise, we can try to estimate the calibration trend and factor it out. 
+
+Data usage and validation can be tricky with this approach but it can work well. 
+
+
+## What's Next? 
+
+Let’s assume that we will enable others to get predictions from our model. 
+
+In our example, we would deploy our model so that medicinal chemists would predict specific compounds or make predictions _en masse_. 
+
+<br> 
+
+We have _consumers_ of our models now. 
+
+What other activities should we pursue to ensure that the model is used effectively and safely?
+
+ - Documentation
+ - Characterization
+ - Monitoring.  
+
+## Documentation: How was the model created? 
+
+  - Methodology
+  - Data 
+    - numbers 
+    - scope (local or global?)
+    - limitations  
+    - provenance
+  - Efficacy claims ("our test set RMSE was...")
+
+ 
+## Documentation: How does the model function?
+
+  - Mathematically
+  - What are the main ingredients? 
+  - Where is it applicable? WCGW?
+  - How shall I explain predictions?
+  - Is it fair? 
+  
+etc.
+  
+## How Does it Work?
+
+There is a whole field of literature on model explainers. 
+
+These can be grouped into two groups: global and local explainers. 
+
+- Global methods characterize the model. 
+
+- Local explainers elucidate predictions.
+
+We’ll look at two global methods. 
+
+## Importance Scores
+
 
 :::: {.columns}
 
-::: {.column width="50%"}
+::: {.column width="60%"}
+Variable importance scores are used to quantify the overall effect of a predictor on the model. 
 
-```{r}
-#| label: cal-plots-before-2
-#| echo: false
-#| out-width: 100%
-#| fig-width: 4
-#| fig-height: 4
-#| fig-align: "center"
+There are model-specific methods to compute importance. 
 
-cubist_val_pred %>% 
-  cal_plot_regression(outcome, .pred, alpha = 1 / 5, cex = 2) +
-  labs(title = "Raw Predictions")
-```
-
+More broadly a permutation approach can be used to eliminate the predictors’ effect on the model and see how performance changes. 
 :::
 
-::: {.column width="50%"}
-
-```{r}
-#| label: cal-plots-after
-#| echo: false
-#| out-width: 100%
-#| fig-width: 4
-#| fig-height: 4
-#| fig-align: "center"
-
-cubist_val_pred %>% 
-  cal_estimate_isotonic(outcome, .pred) %>% 
-  cal_apply(cubist_val_pred, .) %>% 
-  cal_plot_regression(outcome, .pred, alpha = 1 / 5, cex = 2) +
-  labs(title = "Calibrated Predictions")
-```
-
-
-:::
-
-::::
-
-
-## Characterization
-
-## Importance
-
+::: {.column width="40%"}
 ```{r}
 #| label: imp-calcs
 #| include: false
 #| cache: true
 
-explainer_cubist <- 
+best_fit_explainer <- 
   explain_tidymodels(
     sim_fit, 
     data = sim_tr, 
@@ -272,37 +474,12 @@ explainer_cubist <-
   )
 
 set.seed(1805)
-pdp_mol_weight <- model_profile(explainer_cubist, N = 500, variables = "mol_weight")
+pdp_mol_weight <- model_profile(best_fit_explainer, N = 500, variables = "mol_weight")
 
 set.seed(1807)
-cubist_vip <- 
-  explainer_cubist %>% 
+best_fit_vip <- 
+  best_fit_explainer %>% 
   model_parts() 
-
-labs <- 
-  tibble::tribble(
-    ~variable, ~feature,
-    "predictor_07", "num_atoms",
-    "predictor_13", "num_bonds",
-    "predictor_16", "eccentricity",
-    "predictor_09", "centralization",
-    "predictor_08", "E_state",
-    "predictor_02", "total_walk_count",
-    "predictor_12", "polarity",
-    "predictor_10", "num_circuits",
-    "predictor_03", "num_3_mem_rings",
-    "predictor_15", "aromatic_ratio",
-    "predictor_17", "ring_complexity",
-    "predictor_11", "slogp",
-    "predictor_01", "peoe_vsa",
-    "predictor_18", "aac",
-    "predictor_14", "dipole_moment",
-    "predictor_05", "phi",
-    "predictor_06", "num_5_mem_rings",
-    "predictor_19", "ivde",
-    "predictor_20", "ivdm",
-    "mol_weight", "mol_weight",
-  )
 ```
 
 
@@ -310,34 +487,47 @@ labs <-
 #| label: vip
 #| echo: false
 #| out-width: 90%
-#| fig-width: 9
-#| fig-height: 4
-#| fig-align: "center"
+#| fig-width: 3.5
+#| fig-height: 5
+#| fig-align: "right"
 
-full <- mean(cubist_vip$dropout_loss[cubist_vip$variable == "_full_model_"])
+full <- mean(best_fit_vip$dropout_loss[best_fit_vip$variable == "_full_model_"])
 
-cubist_vip %>% 
+best_fit_vip %>% 
   as.data.frame() %>% 
-  filter(!grepl("^_", variable)) %>% 
+  filter(!grepl("^_", variable) & variable != "outcome") %>% 
   summarize(mean_drop = mean(dropout_loss), .by = c(variable)) %>% 
-  inner_join(labs, by = "variable") %>% 
   mutate(
-    feature = factor(feature), 
-    feature = reorder(feature, mean_drop),
+    variable = factor(variable), 
+    variable = reorder(variable, mean_drop),
     mean_drop = mean_drop - full
     ) %>% 
-  ggplot(aes(x = mean_drop, y = feature)) + 
+  ggplot(aes(x = mean_drop, y = variable)) + 
   geom_bar(stat = "identity") +
   labs(y = NULL, x = "Drop in RMSE")
 ```
 
-## PDP
+:::
 
+::::
+
+## Partial Dependence Plots
+
+
+:::: {.columns}
+
+::: {.column width="50%"}
+For important features, we can also understand the average relationship between a predictor and the outcome.
+
+Partial dependence plots and similar tools can help consumers understand (generally) why a predictor matters. 
+:::
+
+::: {.column width="50%"}
 ```{r}
 #| label: pdp
 #| echo: false
-#| out-width: 90%
-#| fig-width: 9
+#| out-width: 100%
+#| fig-width: 4
 #| fig-height: 4
 #| fig-align: "center"
 
@@ -364,8 +554,11 @@ ggplot_pdp <- function(obj, x) {
 
 ggplot_pdp(pdp_mol_weight, mol_weight) +
   labs(x = "molecular weight", y = "effect")
-
 ```
+
+:::
+
+::::
 
 ## Prediction Intervals
 
@@ -379,12 +572,23 @@ ggplot_pdp(pdp_mol_weight, mol_weight) +
 if (!file.exists("RData/intervals.RData")) {
   cfml_ints <- int_conformal_split(sim_fit, cal_data = sim_vl)
   set.seed(9832)
-  bts_ints <- sim_tr %>% bootstraps(times = 100) %>% add_bootstrap_models(sim_fit)
+  bts_ints <- sim_tr %>% bootstraps(times = 20) %>% add_bootstrap_models(sim_fit)
   save(bts_ints, cfml_ints, file = "RData/intervals.RData")
 } else {
   load("RData/intervals.RData")
 }
 ```
+
+For end-users, a measure of uncertainty in predictions can be very helpful. 
+
+An X% prediction interval is a bound where the next observed value is within the bound X% of the time. 
+
+<br> 
+
+Most ML models _cannot_ easily make these but two tools can work for any regression model are:
+
+ - Bootstrap intervals (expensive, solid theory)
+ - Conformal inference (fast but still evolving)
 
 ## 90% Prediction Intervals
 
@@ -397,7 +601,7 @@ if (!file.exists("RData/intervals.RData")) {
 #| fig-height: 4
 #| fig-align: "center"
 
-set.seed(23) 
+set.seed(214) 
 int_values <- 
   sim_te %>% 
   mutate(bins = ntile(outcome, 10)) %>% 
@@ -426,17 +630,24 @@ int_res %>%
   ggplot(aes(.pred, outcome)) + 
   geom_abline(lty = 3) + 
   geom_point(aes(col = inside), show.legend = FALSE, ) + 
-  geom_errorbar(aes(ymin = .pred_lower, ymax = .pred_upper), width = 3, alpha = 1 / 2) + 
+  geom_errorbar(aes(ymin = .pred_lower, ymax = .pred_upper), width = 0.1, alpha = 1 / 2) + 
   facet_wrap(~ method) + 
   coord_obs_pred() +
   labs(x = "Predicted", y = "Observed")
 
 ```
 
-## Documentation
-
-
 ## Monitoring
+
+If we deploy a model, especially with an internal/public API, we should check to see how it does over time. 
+
+<br>
+
+Assuming that we get labeled data within some unit of time, we should report performance (preferably to the customers). 
+
+<br>
+
+Let’s look at the first 10 post-deployment weeks where about 40 molecules are available each week. 
 
 ```{r}
 #| label: split-new-data
@@ -462,7 +673,7 @@ sim_monitor_data <-
 #| include: false
 #| cache: true
 
-rmse_interval <- function(split) {
+single_rmse_interval <- function(split) {
   split %>% 
     analysis() %>% 
     yardstick::rmse(outcome, .pred) %>% 
@@ -470,13 +681,14 @@ rmse_interval <- function(split) {
     mutate(std.err = NA_real_)
 }
 
+
 rmse_ints <- 
   sim_monitor_data %>% 
   mutate(
     ints = purrr::map(predictions, 
-               ~ bootstraps(.x, times = 2001) %>% 
-                 mutate(rmse = purrr::map(splits, rmse_interval)) %>%
-                 int_pctl(rmse, alpha = 0.1)
+                      ~ bootstraps(.x, times = 2001) %>% 
+                        mutate(rmse = purrr::map(splits, single_rmse_interval)) %>%
+                        int_pctl(rmse, alpha = 0.1)
     )
   )
 ```
@@ -503,9 +715,25 @@ rmse_ints %>%
   scale_x_continuous(breaks= pretty_breaks())
 ```
 
+## Drift
+
+We often hear about _model drift_ but there is no such thing. 
+
+<br>
+
+_Data drift_ may change over time and that can affect how well our model works if we end up extrapolating outside of our training set. 
+
+<br>
+
+
+There is also _concept drift_: the model starts being used for some other purpose or with some other population. 
+
+<br>
+
+The assay simulated here was designed to measure whether compounds crossed the blood-brain-barrier. 
+
 
 ## Maybe we should look into this...
-
 
 ```{r}
 #| label: monitor-2
@@ -525,7 +753,9 @@ rmse_ints %>%
 ```
 
 
-## Monitoring Performance for "Drift"
+## Data Drift or Concept Drift?
+
+Smaller molecules
 
 ```{r}
 #| label: mol-weight
@@ -541,9 +771,163 @@ rmse_ints %>%
   labs(x = "Week", y = "Average Mol Weight")
 ```
 
+## Define the Applicability Domain
+
+Prior to releasing a model, document what it is intended to do and for what population.
+
+ - This is called the model's _applicability domain_. 
+
+<br>
+
+We can treat the training set as a multivariate reference distribution and try to measure how much (if at all) new samples extrapolate beyond it. 
+
+ - Hat values
+ - Principal component analysis
+ - Isolation forests, etc. 
+
+## PCA for Applicability Domain
+
+```{r}
+#| label: pca-1
+#| echo: false
+#| out-width: 70%
+#| fig-width: 8
+#| fig-height: 4
+#| fig-align: "center"
+
+data(BloodBrain, package = "caret")
+
+pca_tr <- 
+  recipe(~ ., data = bbbDescr) %>% 
+  step_zv(all_predictors()) %>% 
+  step_YeoJohnson(all_predictors()) %>% 
+  step_pca(all_predictors(), num_comp = 2) %>% 
+  prep() %>% 
+  bake(new_data = NULL)
+
+pair_tr <- 
+  bbbDescr %>% 
+  select(tpsa, weight) %>% 
+  filter(tpsa < 100)
+
+pair_ex <- 
+  bbbDescr %>% 
+  select(tpsa, weight) %>% 
+  filter(tpsa > 100) %>%
+  arrange(tpsa) %>% 
+  slice(2)
+
+pca_tr <- 
+  recipe(~ ., data = pair_tr) %>% 
+  step_zv(all_predictors()) %>% 
+  step_YeoJohnson(all_predictors()) %>% 
+  step_normalize(all_predictors()) %>% 
+  step_pca(all_predictors()) %>% 
+  prep() 
+
+pca_tr_vals <- 
+  pca_tr %>% 
+  bake(new_data = NULL)
+
+pca_dist <- 
+  pca_tr_vals %>% 
+  mutate(distance = PC1^2 + PC2^2)
+
+pca_ex_vals <- 
+  pca_tr %>% 
+  bake(new_data = pair_ex)
+
+p_orig <- 
+  pair_tr %>% 
+  ggplot(aes(weight, tpsa)) + 
+  geom_point(alpha = 1 / 2)
+
+p_pca <- 
+  pca_tr_vals %>% 
+  ggplot(aes(PC1, PC2)) + 
+  geom_point(alpha = 1 / 2)
+
+p_orig + p_pca
+
+```
+
+## PCA Reference Distirbution
+
+```{r}
+#| label: pca-2
+#| echo: false
+#| out-width: 70%
+#| fig-width: 8
+#| fig-height: 4
+#| fig-align: "center"
+
+p_dist_2d <- 
+  pca_tr_vals %>% 
+  ggplot(aes(PC1, PC2)) + 
+  geom_point(alpha = 1 / 10) 
+
+for(i in 1:nrow(pca_tr_vals)) {
+  p_dist_2d <- 
+    p_dist_2d + 
+    geom_segment(
+      aes(xend = 0, yend = 0),
+      alpha = 1 / 5,
+      data = pca_tr_vals[i,])
+}
+
+p_dist <- 
+  pca_dist %>% 
+  ggplot(aes(distance)) + 
+  geom_histogram(col = "white", bins = 20) +
+  geom_rug()
+
+p_dist_2d + p_dist
+
+```
+
+## Quantifying Extrapolation
 
 
-## Applicability
+```{r}
+#| label: pca-3
+#| echo: false
+#| out-width: 70%
+#| fig-width: 8
+#| fig-height: 4
+#| fig-align: "center"
+
+extpl_2d <- 
+  pca_tr_vals %>% 
+  ggplot(aes(PC1, PC2)) + 
+  geom_point(alpha = 1 / 2) +
+  geom_point(data = pca_ex_vals, col = "red", cex = 3)
+
+extpl_dist <- 
+  pca_dist %>% 
+  ggplot(aes(distance)) + 
+  geom_histogram(col = "white", bins = 40)  +
+  geom_rug() + 
+  geom_vline(xintercept = pca_ex_vals$PC1^2 + pca_ex_vals$PC2^2,
+             col = "red")
+
+extpl_2d + extpl_dist
+```
+
+## Isolation Forests
+
+```{r}
+#| label: if-ex
+#| echo: false
+#| fig-align: "center"
+
+knitr::include_graphics("if.png")
+```
+
+(from [Liu, Ting, and Zhou (2008)](https://scholar.google.com/scholar?hl=en&as_sdt=0%2C7&q=isolation+forests&btnG=))
+
+
+
+## Monitoring via Isolation Forests
 
 ```{r}
 #| label: apd-isolation
@@ -560,11 +944,8 @@ if_scores <-
 
 if_means <- 
   if_scores %>% 
-  summarize(`applicability score` = mean(score_pctl), .by = c(.week))
+  summarize(`mean applicability score` = mean(score_pctl), .by = c(.week))
 ```
-
-
-## Scoring New Data
 
 ```{r}
 #| label: iso-forest
@@ -576,7 +957,30 @@ if_means <-
 
 if_means %>% 
   ggplot(aes(.week)) + 
-  geom_point(aes(y = `applicability score`)) + 
+  geom_point(aes(y = `mean applicability score`)) + 
   labs(x = "Week")
 ```
+
+
+
+## Scoring New Data
+
+Using any of the applicability domain methods, we can add a second unsupervised score to go along with each individual prediction: 
+
+> Your assay value was predicted to be 6.28, indicating that the molecule signficantly crosses the blood-brain barrier. 
+>
+> _However_, the prediction is an extraploation that is very different from the data that was used to create the model (score: 0.97). Use this prediction with extreme caution!
+
+
+## Thanks
+
+Thanks for the invitation to speak today!
+
+<br> 
+
+The tidymodels team: **Hannah Frick, Emil Hvitfeldt, and Simon Couch**.
+
+<br> 
+
+Special thanks to the other folks who contributed so much to tidymodels: Davis Vaughan, Julia Silge, Edgar Ruiz, Alison Hill, Desirée De Leon, our previous interns, and the tidyverse team.
 

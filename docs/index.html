@@ -338,31 +338,78 @@ Max Kuhn
 </div>
 
 </section>
-<section id="calibration---validation-set" class="slide level2">
-<h2>Calibration - Validation Set</h2>
-<div class="columns">
-<div class="column" style="width:50%;">
-<div class="cell" data-layout-align="center">
-<div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
-<figure>
-<p><img data-src="figures/cal-plots-before-1.svg" class="quarto-figure quarto-figure-center" style="width:100.0%"></p>
-</figure>
-</div>
-</div>
-</div>
-</div>
-</div>
+<section id="some-example-data" class="slide level2">
+<h2>Some example data</h2>
+<p>Computational chemistry QSAR data were simulated for a numeric outcome:</p>
+<ul>
+<li>n = 6000 training set.</li>
+<li>n = 2000 test set.</li>
+<li>n = 2000 validation set.</li>
+<li>20 molecular descriptors</li>
+</ul>
+<p>Let’s suppose it is an assay to measure blood-brain-barrier penetration.</p>
 </section>
-<section id="calibration---isotonic-regression" class="slide level2">
-<h2>Calibration - Isotonic regression</h2>
+<section id="model-development" class="slide level2">
+<h2>Model Development</h2>
+<p>A few models were tuned:</p>
+<div class="columns">
+<div class="column" style="width:50%;">
+<ul>
+<li>boosted trees (lightgbm)</li>
+<li>Cubist rules</li>
+</ul>
+</div><div class="column" style="width:50%;">
+<ul>
+<li>nearest-neighbor regression</li>
+<li>neural networks (single layer, FF)</li>
+</ul>
+</div>
+</div>
+<p>Several preprocessors were also assessed: nothing, partial least squares, and the spatial sign.</p>
+<p>Each was tuned over their main parameters using 50 candidates.</p>
+<p><br></p>
+<p>The validation set RMSE was used to choose within- and between-models.</p>
+</section>
+<section id="model-results" class="slide level2">
+<h2>Model Results</h2>
+
+<img data-src="figures/all-rmse-1.svg" class="quarto-figure quarto-figure-center r-stretch" style="width:100.0%"></section>
+<section id="model-selection" class="slide level2">
+<h2>Model Selection</h2>
+<p>We ended up using one of the numerically best models: a neural network</p>
+<ul>
+<li>9 hidden units with tanh activation</li>
+<li>weight decay of <span class="math inline">\(10^{-9.1}\)</span></li>
+<li>a learning rate of <span class="math inline">\(10^{-1.5}\)</span>, trained over 221 epochs</li>
+</ul>
+<p>Performance statistics (RMSE)</p>
+<ul>
+<li>validation set: 0.254</li>
+<li>test set: 0.258</li>
+</ul>
+</section>
+<section id="calibration" class="slide level2">
+<h2>Calibration</h2>
+<p>It’s pretty easy to just look at the metrics (RMSE) and make decisions.</p>
+<blockquote>
+<p>The only way to be comfortable with your data is to never look at them.</p>
+</blockquote>
+<p><br></p>
+<p>For any type of model, we should check the <em>calibration</em> of the results. Are they consistent with what we see in nature?</p>
+<ul>
+<li><p>Classification: we try to see if our probability estimates match the rate of the event.</p></li>
+<li><p>Regression: we plot observed vs predicted values.</p></li>
+</ul>
+</section>
+<section id="calibration-results" class="slide level2">
+<h2>Calibration Results</h2>
 <div class="columns">
 <div class="column" style="width:50%;">
 <div class="cell" data-layout-align="center">
 <div class="cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure>
-<p><img data-src="figures/cal-plots-before-2-1.svg" class="quarto-figure quarto-figure-center" style="width:100.0%"></p>
+<p><img data-src="figures/cal-plots-before-1.svg" class="quarto-figure quarto-figure-center" style="width:90.0%"></p>
 </figure>
 </div>
 </div>
@@ -372,7 +419,7 @@ Max Kuhn
 <div class="cell-output-display">
 <div class="quarto-figure quarto-figure-center">
 <figure>
-<p><img data-src="figures/cal-plots-after-1.svg" class="quarto-figure quarto-figure-center" style="width:100.0%"></p>
+<p><img data-src="figures/cal-plots-test-1.svg" class="quarto-figure quarto-figure-center" style="width:90.0%"></p>
 </figure>
 </div>
 </div>
@@ -380,49 +427,198 @@ Max Kuhn
 </div>
 </div>
 </section>
-<section id="characterization" class="slide level2">
-<h2>Characterization</h2>
+<section id="calibration-1" class="slide level2">
+<h2>Calibration</h2>
+<p>Some models (like ensembles) tend to under-predict at the tails of the outcome distribution.</p>
+<p>If that’s the case, our best avenue is to try a different model.</p>
+<p>Otherwise, we can try to estimate the calibration trend and factor it out.</p>
+<p>Data usage and validation can be tricky with this approach but it can work well.</p>
 </section>
-<section id="importance" class="slide level2">
-<h2>Importance</h2>
-
-<img data-src="figures/vip-1.svg" class="quarto-figure quarto-figure-center r-stretch" style="width:90.0%"></section>
-<section id="pdp" class="slide level2">
-<h2>PDP</h2>
-
-<img data-src="figures/pdp-1.svg" class="quarto-figure quarto-figure-center r-stretch" style="width:90.0%"></section>
+<section id="whats-next" class="slide level2">
+<h2>What’s Next?</h2>
+<p>Let’s assume that we will enable others to get predictions from our model.</p>
+<p>In our example, we would deploy our model so that medicinal chemists would predict specific compounds or make predictions <em>en masse</em>.</p>
+<p><br></p>
+<p>We have <em>consumers</em> of our models now.</p>
+<p>What other activities should we pursue to ensure that the model is used effectively and safely?</p>
+<ul>
+<li>Documentation</li>
+<li>Characterization</li>
+<li>Monitoring.</li>
+</ul>
+</section>
+<section id="documentation-how-was-the-model-created" class="slide level2">
+<h2>Documentation: How was the model created?</h2>
+<ul>
+<li>Methodology</li>
+<li>Data
+<ul>
+<li>numbers</li>
+<li>scope (local or global?)</li>
+<li>limitations<br>
+</li>
+<li>provenance</li>
+</ul></li>
+<li>Efficacy claims (“our test set RMSE was…”)</li>
+</ul>
+</section>
+<section id="documentation-how-does-the-model-function" class="slide level2">
+<h2>Documentation: How does the model function?</h2>
+<ul>
+<li>Mathematically</li>
+<li>What are the main ingredients?</li>
+<li>Where is it applicable? WCGW?</li>
+<li>How shall I explain predictions?</li>
+<li>Is it fair?</li>
+</ul>
+<p>etc.</p>
+</section>
+<section id="how-does-it-work" class="slide level2">
+<h2>How Does it Work?</h2>
+<p>There is a whole field of literature on model explainers.</p>
+<p>These can be grouped into two groups: global and local explainers.</p>
+<ul>
+<li><p>Global methods characterize the model.</p></li>
+<li><p>Local explainers elucidate predictions.</p></li>
+</ul>
+<p>We’ll look at two global methods.</p>
+</section>
+<section id="importance-scores" class="slide level2">
+<h2>Importance Scores</h2>
+<div class="columns">
+<div class="column" style="width:60%;">
+<p>Variable importance scores are used to quantify the overall effect of a predictor on the model.</p>
+<p>There are model-specific methods to compute importance.</p>
+<p>More broadly a permutation approach can be used to eliminate the predictors’ effect on the model and see how performance changes.</p>
+</div><div class="column" style="width:40%;">
+<div class="cell" data-layout-align="right">
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-right">
+<figure>
+<p><img data-src="figures/vip-1.svg" class="quarto-figure quarto-figure-right" style="width:90.0%"></p>
+</figure>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section id="partial-dependence-plots" class="slide level2">
+<h2>Partial Dependence Plots</h2>
+<div class="columns">
+<div class="column" style="width:50%;">
+<p>For important features, we can also understand the average relationship between a predictor and the outcome.</p>
+<p>Partial dependence plots and similar tools can help consumers understand (generally) why a predictor matters.</p>
+</div><div class="column" style="width:50%;">
+<div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure>
+<p><img data-src="figures/pdp-1.svg" class="quarto-figure quarto-figure-center" style="width:100.0%"></p>
+</figure>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
 <section id="prediction-intervals" class="slide level2">
 <h2>Prediction Intervals</h2>
+<p>For end-users, a measure of uncertainty in predictions can be very helpful.</p>
+<p>An X% prediction interval is a bound where the next observed value is within the bound X% of the time.</p>
+<p><br></p>
+<p>Most ML models <em>cannot</em> easily make these but two tools can work for any regression model are:</p>
+<ul>
+<li>Bootstrap intervals (expensive, solid theory)</li>
+<li>Conformal inference (fast but still evolving)</li>
+</ul>
 </section>
 <section id="prediction-intervals-1" class="slide level2">
 <h2>90% Prediction Intervals</h2>
 
 <img data-src="figures/two-intervals-1.svg" class="quarto-figure quarto-figure-center r-stretch" style="width:90.0%"></section>
-<section id="documentation" class="slide level2">
-<h2>Documentation</h2>
-</section>
 <section id="monitoring" class="slide level2">
 <h2>Monitoring</h2>
+<p>If we deploy a model, especially with an internal/public API, we should check to see how it does over time.</p>
+<p><br></p>
+<p>Assuming that we get labeled data within some unit of time, we should report performance (preferably to the customers).</p>
+<p><br></p>
+<p>Let’s look at the first 10 post-deployment weeks where about 40 molecules are available each week.</p>
 </section>
 <section id="post--deployment-monitoring" class="slide level2">
 <h2>Post- Deployment Monitoring</h2>
 
 <img data-src="figures/monitor-1-1.svg" class="quarto-figure quarto-figure-center r-stretch" style="width:70.0%"></section>
+<section id="drift" class="slide level2">
+<h2>Drift</h2>
+<p>We often hear about <em>model drift</em> but there is no such thing.</p>
+<p><br></p>
+<p><em>Data drift</em> may change over time and that can affect how well our model works if we end up extrapolating outside of our training set.</p>
+<p><br></p>
+<p>There is also <em>concept drift</em>: the model starts being used for some other purpose or with some other population.</p>
+<p><br></p>
+<p>The assay simulated here was designed to measure whether compounds crossed the blood-brain-barrier.</p>
+</section>
 <section id="maybe-we-should-look-into-this" class="slide level2">
 <h2>Maybe we should look into this…</h2>
 
 <img data-src="figures/monitor-2-1.svg" class="quarto-figure quarto-figure-center r-stretch" style="width:70.0%"></section>
-<section id="monitoring-performance-for-drift" class="slide level2">
-<h2>Monitoring Performance for “Drift”</h2>
+<section id="data-drift-or-concept-drift" class="slide level2">
+<h2>Data Drift or Concept Drift?</h2>
+<p>Smaller molecules</p>
 
 <img data-src="figures/mol-weight-1.svg" class="quarto-figure quarto-figure-center r-stretch" style="width:70.0%"></section>
-<section id="applicability" class="slide level2">
-<h2>Applicability</h2>
+<section id="define-the-applicability-domain" class="slide level2">
+<h2>Define the Applicability Domain</h2>
+<p>Prior to releasing a model, document what it is intended to do and for what population.</p>
+<ul>
+<li>This is called the model’s <em>applicability domain</em>.</li>
+</ul>
+<p><br></p>
+<p>We can treat the training set as a multivariate reference distribution and try to measure how much (if at all) new samples extrapolate beyond it.</p>
+<ul>
+<li>Hat values</li>
+<li>Principal component analysis</li>
+<li>Isolation forests, etc.</li>
+</ul>
 </section>
+<section id="pca-for-applicability-domain" class="slide level2">
+<h2>PCA for Applicability Domain</h2>
+
+<img data-src="figures/pca-1-1.svg" class="quarto-figure quarto-figure-center r-stretch" style="width:70.0%"></section>
+<section id="pca-reference-distirbution" class="slide level2">
+<h2>PCA Reference Distirbution</h2>
+
+<img data-src="figures/pca-2-1.svg" class="quarto-figure quarto-figure-center r-stretch" style="width:70.0%"></section>
+<section id="quantifying-extrapolation" class="slide level2">
+<h2>Quantifying Extrapolation</h2>
+
+<img data-src="figures/pca-3-1.svg" class="quarto-figure quarto-figure-center r-stretch" style="width:70.0%"></section>
+<section id="isolation-forests" class="slide level2">
+<h2>Isolation Forests</h2>
+
+<img data-src="if.png" class="quarto-figure quarto-figure-center r-stretch" width="1800"><p>(from <a href="https://scholar.google.com/scholar?hl=en&amp;as_sdt=0%2C7&amp;q=isolation+forests&amp;btnG=">Liu, Ting, and Zhou (2008)</a>)</p>
+</section>
+<section id="monitoring-via-isolation-forests" class="slide level2">
+<h2>Monitoring via Isolation Forests</h2>
+
+<img data-src="figures/iso-forest-1.svg" class="quarto-figure quarto-figure-center r-stretch" style="width:70.0%"></section>
 <section id="scoring-new-data" class="slide level2">
 <h2>Scoring New Data</h2>
-
-<img data-src="figures/iso-forest-1.svg" class="quarto-figure quarto-figure-center r-stretch" style="width:70.0%"><div class="quarto-auto-generated-content">
+<p>Using any of the applicability domain methods, we can add a second unsupervised score to go along with each individual prediction:</p>
+<blockquote>
+<p>Your assay value was predicted to be 6.28, indicating that the molecule signficantly crosses the blood-brain barrier.</p>
+<p><em>However</em>, the prediction is an extraploation that is very different from the data that was used to create the model (score: 0.97). Use this prediction with extreme caution!</p>
+</blockquote>
+</section>
+<section id="thanks" class="slide level2">
+<h2>Thanks</h2>
+<p>Thanks for the invitation to speak today!</p>
+<p><br></p>
+<p>The tidymodels team: <strong>Hannah Frick, Emil Hvitfeldt, and Simon Couch</strong>.</p>
+<p><br></p>
+<p>Special thanks to the other folks who contributed so much to tidymodels: Davis Vaughan, Julia Silge, Edgar Ruiz, Alison Hill, Desirée De Leon, our previous interns, and the tidyverse team.</p>
+<div class="quarto-auto-generated-content">
 <div class="footer footer-default">
 <p><a href="https://topepo.github.io/2024_PharmaDS" class="uri">https://topepo.github.io/2024_PharmaDS</a></p>
 </div>
