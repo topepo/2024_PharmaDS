@@ -797,25 +797,17 @@ We can treat the training set as a multivariate reference distribution and try t
 
 data(BloodBrain, package = "caret")
 
-pca_tr <- 
-  recipe(~ ., data = bbbDescr) %>% 
-  step_zv(all_predictors()) %>% 
-  step_YeoJohnson(all_predictors()) %>% 
-  step_pca(all_predictors(), num_comp = 2) %>% 
-  prep() %>% 
-  bake(new_data = NULL)
-
 pair_tr <- 
   bbbDescr %>% 
-  select(tpsa, weight) %>% 
-  filter(tpsa < 100)
+  select(clogp, weight) %>% 
+  filter(weight < 600)
 
 pair_ex <- 
   bbbDescr %>% 
-  select(tpsa, weight) %>% 
-  filter(tpsa > 100) %>%
-  arrange(tpsa) %>% 
-  slice(2)
+  select(clogp, weight) %>% 
+  filter(weight > 600) %>%
+  arrange(weight) %>% 
+  slice(1)
 
 pca_tr <- 
   recipe(~ ., data = pair_tr) %>% 
@@ -839,7 +831,7 @@ pca_ex_vals <-
 
 p_orig <- 
   pair_tr %>% 
-  ggplot(aes(weight, tpsa)) + 
+  ggplot(aes(weight, clogp)) + 
   geom_point(alpha = 1 / 2)
 
 p_pca <- 
