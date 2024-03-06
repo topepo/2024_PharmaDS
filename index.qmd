@@ -572,7 +572,7 @@ ggplot_pdp(pdp_mol_weight, mol_weight) +
 if (!file.exists("RData/intervals.RData")) {
   cfml_ints <- int_conformal_split(sim_fit, cal_data = sim_vl)
   set.seed(9832)
-  bts_ints <- sim_tr %>% bootstraps(times = 20) %>% add_bootstrap_models(sim_fit)
+  bts_ints <- sim_tr %>% bootstraps(times = 2000) %>% add_bootstrap_models(sim_fit)
   save(bts_ints, cfml_ints, file = "RData/intervals.RData")
 } else {
   load("RData/intervals.RData")
