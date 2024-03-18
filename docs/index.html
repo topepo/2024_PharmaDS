@@ -338,14 +338,24 @@ Max Kuhn, Ph.D.&nbsp;(Posit, PBC)
 </div>
 
 </section>
+<section id="introduction" class="slide level2">
+<h2>Introduction</h2>
+<p>Thanks for staying until the last talk of the conference 😄</p>
+<p><br></p>
+<p>My goal is to stimulate our thoughts on <em>supporting</em> models once they are deployed.</p>
+<p><br></p>
+<p>Most of this talk is informed by my experiences in early drug discovery as well as developing algorithms for instrumented diagnostics (infection diseases).</p>
+<p><br></p>
+<p>Let’s start with an example.</p>
+</section>
 <section id="some-example-data" class="slide level2">
 <h2>Some example data</h2>
 <p>Computational chemistry QSAR data were simulated for a numeric outcome:</p>
 <ul>
-<li>n = 6000 training set.</li>
-<li>n = 2000 test set.</li>
-<li>n = 2000 validation set.</li>
-<li>20 molecular descriptors</li>
+<li>n = 6,000 training set.</li>
+<li>n = 2,000 test set.</li>
+<li>n = 2,000 validation set.</li>
+<li>20 molecular descriptors (unrealistically small)</li>
 </ul>
 <p>Let’s suppose it is an assay to measure blood-brain-barrier penetration.</p>
 </section>
@@ -370,8 +380,8 @@ Max Kuhn, Ph.D.&nbsp;(Posit, PBC)
 <p><br></p>
 <p>The validation set RMSE was used to choose within- and between-models.</p>
 </section>
-<section id="model-results" class="slide level2">
-<h2>Model Results</h2>
+<section id="section" class="slide level2">
+<h2></h2>
 
 <img data-src="figures/all-rmse-1.svg" class="quarto-figure quarto-figure-center r-stretch" style="width:100.0%"></section>
 <section id="model-selection" class="slide level2">
@@ -444,11 +454,16 @@ Max Kuhn, Ph.D.&nbsp;(Posit, PBC)
 <ul>
 <li>Documentation</li>
 <li>Characterization</li>
-<li>Monitoring.</li>
+<li>Monitoring</li>
 </ul>
 </section>
-<section id="documentation-how-was-the-model-created" class="slide level2">
-<h2>Documentation: How was the model created?</h2>
+<section>
+<section id="documentation" class="title-slide slide level1 center">
+<h1>Documentation</h1>
+
+</section>
+<section id="how-was-the-model-created" class="slide level2">
+<h2>How was the model created?</h2>
 <ul>
 <li>Methodology</li>
 <li>Data
@@ -462,8 +477,8 @@ Max Kuhn, Ph.D.&nbsp;(Posit, PBC)
 <li>Efficacy claims (“our test set RMSE was…”)</li>
 </ul>
 </section>
-<section id="documentation-how-does-the-model-function" class="slide level2">
-<h2>Documentation: How does the model function?</h2>
+<section id="how-does-the-model-function" class="slide level2">
+<h2>How does the model function?</h2>
 <ul>
 <li>Mathematically</li>
 <li>What are the main ingredients?</li>
@@ -472,6 +487,11 @@ Max Kuhn, Ph.D.&nbsp;(Posit, PBC)
 <li>Is it fair?</li>
 </ul>
 <p>etc.</p>
+</section></section>
+<section>
+<section id="characterization" class="title-slide slide level1 center">
+<h1>Characterization</h1>
+
 </section>
 <section id="how-does-it-work" class="slide level2">
 <h2>How Does it Work?</h2>
@@ -488,7 +508,7 @@ Max Kuhn, Ph.D.&nbsp;(Posit, PBC)
 <div class="columns">
 <div class="column" style="width:60%;">
 <p>Variable importance scores are used to quantify the overall effect of a predictor on the model.</p>
-<p>There are model-specific methods to compute importance.</p>
+<p>There are model-specific methods to compute importance <em>for some models</em>.</p>
 <p>More broadly a permutation approach can be used to eliminate the predictors’ effect on the model and see how performance changes.</p>
 </div><div class="column" style="width:40%;">
 <div class="cell" data-layout-align="right">
@@ -527,18 +547,23 @@ Max Kuhn, Ph.D.&nbsp;(Posit, PBC)
 <p>For end-users, a measure of uncertainty in predictions can be very helpful.</p>
 <p>An X% prediction interval is a bound where the next observed value is within the bound X% of the time.</p>
 <p><br></p>
-<p>Most ML models <em>cannot</em> easily make these but two tools can work for any regression model are:</p>
+<p>Most ML models <em>cannot</em> easily make these but two tools that can work for any regression model are:</p>
 <ul>
-<li>Bootstrap intervals (expensive, solid theory)</li>
+<li>Bootstrap intervals (expensive but solid theory)</li>
 <li>Conformal inference (fast but still evolving)</li>
 </ul>
 </section>
 <section id="prediction-intervals-1" class="slide level2">
 <h2>90% Prediction Intervals</h2>
 
-<img data-src="figures/two-intervals-1.svg" class="quarto-figure quarto-figure-center r-stretch" style="width:90.0%"></section>
-<section id="monitoring" class="slide level2">
-<h2>Monitoring</h2>
+<img data-src="figures/two-intervals-1.svg" class="quarto-figure quarto-figure-center r-stretch" style="width:90.0%"></section></section>
+<section>
+<section id="monitoring" class="title-slide slide level1 center">
+<h1>Monitoring</h1>
+
+</section>
+<section id="tracking-performance" class="slide level2">
+<h2>Tracking Performance</h2>
 <p>If we deploy a model, especially with an internal/public API, we should check to see how it does over time.</p>
 <p><br></p>
 <p>Assuming that we get labeled data within some unit of time, we should report performance (preferably to the customers).</p>
@@ -653,7 +678,7 @@ Max Kuhn, Ph.D.&nbsp;(Posit, PBC)
 <p><a href="https://topepo.github.io/2024_PharmaDS" class="uri">https://topepo.github.io/2024_PharmaDS</a></p>
 </div>
 </div>
-</section>
+</section></section>
     </div>
   </div>
 

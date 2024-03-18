@@ -122,14 +122,30 @@ sim_vl <- validation(sim_init)
 sim_rs <- validation_set(sim_init)
 ```
 
+## Introduction
+
+Thanks for staying until the last talk of the conference `r emo::ji("smile")`
+
+<br>
+
+My goal is to stimulate our thoughts on _supporting_ models once they are deployed. 
+
+<br>
+
+Most of this talk is informed by my experiences in early drug discovery as well as developing algorithms for instrumented diagnostics (infection diseases). 
+
+<br>
+
+Let's start with an example. 
+
 ## Some example data
 
 Computational chemistry QSAR data were simulated for a numeric outcome:
 
-*  n = `r nrow(sim_tr)` training set. 
-*  n = `r nrow(sim_te)` test set. 
-*  n = `r nrow(sim_vl)` validation set. 
-*  `r ncol(sim_tr) - 1` molecular descriptors 
+*  n = `r format(nrow(sim_tr), big.mark = ",")` training set. 
+*  n = `r format(nrow(sim_te), big.mark = ",")` test set. 
+*  n = `r format(nrow(sim_vl), big.mark = ",")` validation set. 
+*  `r ncol(sim_tr) - 1` molecular descriptors (unrealistically small)
 
 Let’s suppose it is an assay to measure blood-brain-barrier penetration. 
 
@@ -296,7 +312,7 @@ best_fit_test_pred <-
 best_fit_test_rmse <- best_fit_test_pred %>% rmse(outcome, .pred)
 ```
 
-## Model Results
+## 
 
 
 ```{r}
@@ -304,15 +320,15 @@ best_fit_test_rmse <- best_fit_test_pred %>% rmse(outcome, .pred)
 #| echo: false
 #| out-width: 100%
 #| fig-height: 4
-#| fig-width: 8
+#| fig-width: 7.5
 #| fig-align: "center"
 all_boot_results %>% 
   mutate(model = ifelse(model == "mlp", "neural network", model)) %>% 
   ggplot(aes(rank, .estimate, col = model, pch = model)) +
-  geom_errorbar(aes(ymin = .lower, ymax = .upper), width = 1 / 2, alpha = 1 / 5) +
-  geom_point(cex = 1 / 3) +
+  geom_errorbar(aes(ymin = .lower, ymax = .upper), width = 1 / 2, alpha = 1 / 3) +
+  geom_point(cex = 1 / 2) +
   labs(y = "RMSE", x = "Model Rank") +
-  scale_colour_viridis_d(option = "turbo")
+  scale_colour_brewer(palette = "Set1") 
 
 ```
 
@@ -409,9 +425,11 @@ What other activities should we pursue to ensure that the model is used effectiv
 
  - Documentation
  - Characterization
- - Monitoring.  
+ - Monitoring
 
-## Documentation: How was the model created? 
+# Documentation
+
+## How was the model created? 
 
   - Methodology
   - Data 
@@ -422,7 +440,7 @@ What other activities should we pursue to ensure that the model is used effectiv
   - Efficacy claims ("our test set RMSE was...")
 
  
-## Documentation: How does the model function?
+## How does the model function?
 
   - Mathematically
   - What are the main ingredients? 
@@ -431,6 +449,8 @@ What other activities should we pursue to ensure that the model is used effectiv
   - Is it fair? 
   
 etc.
+  
+# Characterization  
   
 ## How Does it Work?
 
@@ -452,7 +472,7 @@ We’ll look at two global methods.
 ::: {.column width="60%"}
 Variable importance scores are used to quantify the overall effect of a predictor on the model. 
 
-There are model-specific methods to compute importance. 
+There are model-specific methods to compute importance _for some models_. 
 
 More broadly a permutation approach can be used to eliminate the predictors’ effect on the model and see how performance changes. 
 :::
@@ -584,9 +604,9 @@ An X% prediction interval is a bound where the next observed value is within the
 
 <br> 
 
-Most ML models _cannot_ easily make these but two tools can work for any regression model are:
+Most ML models _cannot_ easily make these but two tools that can work for any regression model are:
 
- - Bootstrap intervals (expensive, solid theory)
+ - Bootstrap intervals (expensive but solid theory)
  - Conformal inference (fast but still evolving)
 
 ## 90% Prediction Intervals
@@ -599,6 +619,7 @@ Most ML models _cannot_ easily make these but two tools can work for any regress
 #| fig-width: 9
 #| fig-height: 4
 #| fig-align: "center"
+#| cache: true
 
 set.seed(214) 
 int_values <- 
@@ -636,7 +657,9 @@ int_res %>%
 
 ```
 
-## Monitoring
+# Monitoring
+
+## Tracking Performance
 
 If we deploy a model, especially with an internal/public API, we should check to see how it does over time. 
 
