@@ -722,9 +722,6 @@ We often hear about _model drift_ but there is no such thing.
 
 _Data drift_ may change over time and that can affect how well our model works if we end up extrapolating outside of our training set. 
 
-<br>
-
-
 There is also _concept drift_: the model starts being used for some other purpose or with some other population. 
 
 <br>
