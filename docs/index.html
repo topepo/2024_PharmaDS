@@ -10,7 +10,7 @@
 <link href="index_files/libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles"><meta charset="utf-8">
   <meta name="generator" content="quarto-1.5.4">
 
-  <meta name="author" content="Max Kuhn">
+  <meta name="author" content="Max Kuhn, Ph.D.&nbsp;(Posit, PBC)">
   <title>What Happens After the Model?</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -332,7 +332,7 @@
 <div class="quarto-title-authors">
 <div class="quarto-title-author">
 <div class="quarto-title-author-name">
-Max Kuhn 
+Max Kuhn, Ph.D.&nbsp;(Posit, PBC) 
 </div>
 </div>
 </div>
@@ -476,7 +476,7 @@ Max Kuhn
 <section id="how-does-it-work" class="slide level2">
 <h2>How Does it Work?</h2>
 <p>There is a whole field of literature on model explainers.</p>
-<p>These can be grouped into two groups: global and local explainers.</p>
+<p>These can be categorized into two groups: global and local explainers.</p>
 <ul>
 <li><p>Global methods characterize the model.</p></li>
 <li><p>Local explainers elucidate predictions.</p></li>
@@ -557,7 +557,11 @@ Max Kuhn
 <p><br></p>
 <p>There is also <em>concept drift</em>: the model starts being used for some other purpose or with some other population.</p>
 <p><br></p>
-<p>The assay simulated here was designed to measure whether compounds crossed the blood-brain-barrier.</p>
+<p>The assay simulated here was designed to</p>
+<ul>
+<li>measure whether compounds crossed the blood-brain-barrier…</li>
+<li>mostly to verify that <em>they do not</em> get into the brain.</li>
+</ul>
 </section>
 <section id="maybe-we-should-look-into-this" class="slide level2">
 <h2>Maybe we should look into this…</h2>
@@ -617,7 +621,34 @@ Max Kuhn
 <p><br></p>
 <p>The tidymodels team: <strong>Hannah Frick, Emil Hvitfeldt, and Simon Couch</strong>.</p>
 <p><br></p>
-<p>Special thanks to the other folks who contributed so much to tidymodels: Davis Vaughan, Julia Silge, Edgar Ruiz, Alison Hill, Desirée De Leon, our previous interns, and the tidyverse team.</p>
+<p>Special thanks to the other folks who contributed so much to tidymodels: Davis Vaughan, Julia Silge, Edgar Ruiz, Alison Hill, Desirée De Leon, Marly Gotti, our previous interns, and the tidyverse team.</p>
+</section>
+<section id="references-12" class="slide level2">
+<h2>References (1/2)</h2>
+<p>Model fairness:</p>
+<ul>
+<li><a href="https://scholar.google.com/scholar?hl=en&amp;as_sdt=0%2C7&amp;q=Algorithmic+Fairness%3A+Choices%2C+Assumptions%2C+and+Definitions&amp;btnG="><em>Algorithmic Fairness: Choices, Assumptions, and Definitions</em></a></li>
+<li><a href="https://shubhamjain0594.github.io/post/tlds-arvind-fairness-definitions/"><em>TL;DS - 21 fairness definition and their politics</em> by Arvind Narayanan</a></li>
+</ul>
+<p>Conformal Inference</p>
+<ul>
+<li><a href="https://christophmolnar.com/books/conformal-prediction/"><em>Introduction To Conformal Prediction With Python</em></a> by Christoph Molnar (highly recommended)</li>
+<li><a href="https://www.stat.berkeley.edu/~ryantibs/statlearn-s23/lectures/conformal.pdf">Ryan Tibshirani’s notes</a> (pdf)</li>
+</ul>
+</section>
+<section id="references-22" class="slide level2">
+<h2>References (2/2)</h2>
+<p>Applicability Domains:</p>
+<ul>
+<li><p><a href="https://scholar.google.com/scholar?hl=en&amp;as_sdt=0%2C7&amp;as_vis=1&amp;q=%22model+applicability+domains%22&amp;btnG=">google scholar</a></p></li>
+<li><p><a href="https://scholar.google.com/scholar?hl=en&amp;as_sdt=0%2C7&amp;q=Current+Status+of+Methods+for+Defining+the+Applicability+Domain+of+%28Quantitative%29+Structure-Activity+Relationships&amp;btnG="><em>Current Status of Methods for Defining the Applicability Domain of (Quantitative) Structure-Activity Relationships</em></a></p></li>
+<li><p><a href="https://scholar.google.com/scholar?hl=en&amp;as_sdt=0%2C7&amp;q=Applicability+Domain+for+QSAR+Models&amp;btnG="><em>Applicability domain for QSAR models: where theory meets reality</em></a></p></li>
+</ul>
+<p>Explainers:</p>
+<ul>
+<li><p><a href="https://christophm.github.io/interpretable-ml-book/"><em>Interpretable Machine Learning</em></a></p></li>
+<li><p><a href="https://ema.drwhy.ai/"><em>Explanatory Model Analysis</em></a></p></li>
+</ul>
 <div class="quarto-auto-generated-content">
 <div class="footer footer-default">
 <p><a href="https://topepo.github.io/2024_PharmaDS" class="uri">https://topepo.github.io/2024_PharmaDS</a></p>

@@ -1,7 +1,6 @@
 ---
 title: "What Happens After the Model?"
-author: "Max Kuhn"
-
+author: "Max Kuhn, Ph.D. (Posit, PBC)"
 ---
 
 ```{r}
@@ -437,7 +436,7 @@ etc.
 
 There is a whole field of literature on model explainers. 
 
-These can be grouped into two groups: global and local explainers. 
+These can be categorized into two groups: global and local explainers. 
 
 - Global methods characterize the model. 
 
@@ -730,7 +729,10 @@ There is also _concept drift_: the model starts being used for some other purpos
 
 <br>
 
-The assay simulated here was designed to measure whether compounds crossed the blood-brain-barrier. 
+The assay simulated here was designed to 
+
+* measure whether compounds crossed the blood-brain-barrier...
+* mostly to verify that _they do not_ get into the brain.
 
 
 ## Maybe we should look into this...
@@ -974,5 +976,35 @@ The tidymodels team: **Hannah Frick, Emil Hvitfeldt, and Simon Couch**.
 
 <br> 
 
-Special thanks to the other folks who contributed so much to tidymodels: Davis Vaughan, Julia Silge, Edgar Ruiz, Alison Hill, Desirée De Leon, our previous interns, and the tidyverse team.
+Special thanks to the other folks who contributed so much to tidymodels: Davis Vaughan, Julia Silge, Edgar Ruiz, Alison Hill, Desirée De Leon, Marly Gotti, our previous interns, and the tidyverse team.
 
+## References (1/2)
+
+Model fairness: 
+
+ - [_Algorithmic Fairness: Choices, Assumptions, and Definitions_](https://scholar.google.com/scholar?hl=en&as_sdt=0%2C7&q=Algorithmic+Fairness%3A+Choices%2C+Assumptions%2C+and+Definitions&btnG=)
+ - [_TL;DS - 21 fairness definition and their politics_ by Arvind Narayanan](https://shubhamjain0594.github.io/post/tlds-arvind-fairness-definitions/)
+ 
+Conformal Inference
+
+ - [_Introduction To Conformal Prediction With Python_](https://christophmolnar.com/books/conformal-prediction/) by Christoph Molnar
+ (highly recommended)
+ - [Ryan Tibshirani's notes](https://www.stat.berkeley.edu/~ryantibs/statlearn-s23/lectures/conformal.pdf) (pdf)
+
+ 
+## References (2/2)
+ 
+ 
+Applicability Domains: 
+
+ - [google scholar](https://scholar.google.com/scholar?hl=en&as_sdt=0%2C7&as_vis=1&q=%22model+applicability+domains%22&btnG=)
+ 
+ - [_Current Status of Methods for Defining the Applicability Domain of (Quantitative) Structure-Activity Relationships_](https://scholar.google.com/scholar?hl=en&as_sdt=0%2C7&q=Current+Status+of+Methods+for+Defining+the+Applicability+Domain+of+%28Quantitative%29+Structure-Activity+Relationships&btnG=)
+ 
+ - [_Applicability domain for QSAR models: where theory meets reality_](https://scholar.google.com/scholar?hl=en&as_sdt=0%2C7&q=Applicability+Domain+for+QSAR+Models&btnG=)
+ 
+Explainers:
+ 
+ - [_Interpretable Machine Learning_](https://christophm.github.io/interpretable-ml-book/)
+ 
+ - [_Explanatory Model Analysis_](https://ema.drwhy.ai/)
